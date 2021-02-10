@@ -8,5 +8,7 @@ https://github.com/cobeylab/Rt_estimation/tree/master/code
 
 and modify the directories in RtLinearFormSimpleBenchmark.Rmd to point to the data and the code.
 
+* Use RtLinearFormSimple to compute Rt for a synthetic sequence
+* Use RtLinearFormSimple to compute Rt for a sequence of cases in Mexico
 
 
