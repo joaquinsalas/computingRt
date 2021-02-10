@@ -1,0 +1,264 @@
+---
+title: "Compute Rt"
+author: "Joaquin Salas"
+date: "17/1/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, fig.width=3, fig.height=2)
+```
+
+## Introduction
+
+A direct method to compute Rt, the effective reproduction number.
+This contains the exact solution to the linear problem. 
+
+```{r }
+
+
+
+library(ggplot2)
+library(reshape2)
+
+library(matrixStats) #colSds
+library(latex2exp) #latex expression in figure labels
+library(EpiEstim) #estimate R
+
+
+
+code.dir = 'E:/Documents/informs/research/2021.01.14 Rt/code/'
+setwd(code.dir)
+data.dir = 'E:/Documents/informs/research/2021.01.14 Rt/data/'
+
+filename = paste(code.dir, "simpleRt.R", sep = "")
+source(filename)
+
+filename = paste(data.dir, "updated_delays_MX.csv", sep = "")
+data = read.csv(filename)
+entity = "Mexico"
+
+
+#infected people
+infected = data.frame(date= data$X, t = seq(1,dim(data)[1]), I = data[,dim(data)[2]])
+
+########################
+#draw number of infected people
+########################
+p = ggplot(data = infected)+
+  geom_line(aes(x = date, y = I, group = 1), size=1, color = "blue" )+
+  xlab("time")+
+  ylab("infected")+
+  ggtitle(entity)+
+  theme (legend.position = "none",
+         axis.text.x = element_text(angle = 30, hjust = 1))+
+  # specify 10 breaks of approximately equal size for x axis
+  scale_x_discrete(breaks = infected$date[floor(seq(1, 
+                                                    length(infected$date), 
+                                                    length.out = 10))]) +
+  theme(axis.text= element_text(size = 8)) +
+  theme(axis.title= element_text(size = 8)) 
+
+suppressMessages(suppressWarnings(print(p)))
+
+suppressMessages(ggsave("../figures/MX_infections.png"))
+
+
+
+########################
+# Compute Rt, and the generative period function
+##################
+#generative period
+T = 13 #indices running from 0, 1, 2, 3, ... T
+
+gen.period <- NULL 
+Rt <- NULL
+
+for (init in seq(1,dim(infected)[1]-T-1)) {
+
+  
+  #generative interval
+  Ip = infected$I[init:(init+T)]
+  
+  #fill up matrix
+  A = fillMatrix(Ip, T)
+
+  #compute the convex optimization solution
+  res <- generative (A, T)
+  
+  pred = 1/res$x[T+1] * (Ip[seq(T,1,-1)] %*% res$x[1:T])
+  rec = data.frame(date = infected$date[init+T], 
+                   t = init+T-1, 
+                   v = res$x[T+1], 
+                   error = res$error, 
+                   I.Tp1 = Ip[T+1], pred = pred)
+  
+   
+  
+  Rt = rbind(Rt, rec)
+  
+  gen.period <-rbind(gen.period, res$x[1:T])
+
+}
+
+#################################
+#visualize the generative period
+################################
+grid = matrix(0, nrow=dim(gen.period)[1], ncol = dim(gen.period)[2])
+num.rep = dim(gen.period)[2]
+for (y in seq(1, dim(gen.period)[1])) {
+  grid[y,] = seq(1,dim(gen.period)[2])
+  
+}
+
+
+
+x = as.vector(grid)
+y = as.vector(gen.period)
+
+w.pdf = data.frame(x=as.factor(x), y=y)
+
+
+standard.deviation = colSds(gen.period)
+media = colMeans(gen.period)
+
+gen.period.stat = data.frame (x = seq(1, T), mu = media, sd = standard.deviation)
+
+
+#generative period large scale
+p = suppressMessages(suppressWarnings(ggplot(data = gen.period.stat) +
+  geom_line(aes(x = x, y = media),size=1)+
+  
+  geom_ribbon(aes(x=x,y=mu, ymin=mu-sd, ymax=mu+sd),
+              linetype=2, alpha=0.2)+
+  
+  xlab(TeX("$w$"))+
+  ylab(TeX("$p(w)$"))))
+  
+suppressMessages(suppressWarnings(print(p)))
+
+
+
+
+#generative interval detail
+p <- suppressMessages(suppressWarnings(ggplot(w.pdf, aes(x,y)) + stat_bin2d()+
+  geom_bin2d(binwidth = c(1, 0.01)) +
+  theme (#legend.position = "none",
+         axis.text.x = element_text(angle = 0, hjust = 1))+
+  geom_line(data = gen.period.stat, aes(x = x, y = mu),size=1, color = "red") +
+  xlab(TeX("w"))+
+  ylab(TeX("p(w)"))+  
+  theme(axis.text= element_text(size = 8)) +
+  theme(axis.title= element_text(size = 8))))
+suppressMessages(suppressWarnings(print(p)))
+
+suppressMessages(ggsave("../figures/w-pdf.png"))
+
+p<- p+ylim(0,0.15) + theme (legend.position = "none",
+         axis.text.x = element_text(angle = 0, hjust = 1))
+suppressMessages(suppressWarnings(print(p)))
+suppressMessages(ggsave("../figures/w-pdf-detail.png"))
+
+
+ 
+
+
+
+
+##################
+#Visualize Distribution of Errors
+ 
+
+#draw w
+
+p <- suppressMessages(suppressWarnings(ggplot(Rt,aes(x = error)) +
+  geom_histogram( fill = "red", color = "black", bins = 30)+
+  theme(axis.text= element_text(size = 10)) +
+  theme(axis.title= element_text(size = 10)) +
+  xlab("optimization error")))
+suppressWarnings(print(p))
+suppressMessages(ggsave("../figures/histOptError_MX.png")) 
+
+
+p <- suppressMessages(suppressWarnings(ggplot(Rt,aes(x = I.Tp1 - pred)) +
+  geom_histogram( fill = "red", color = "black", bins = 30)+
+  theme(axis.text= element_text(size = 10)) +
+  theme(axis.title= element_text(size = 10)) +
+  xlab("fit error")))
+suppressWarnings(print(p))
+suppressMessages(ggsave("../figures/histFitError_MX.png")) 
+
+
+
+
+filename = paste("../data/Rt_MX.csv", sep = "")
+write.csv(Rt, filename)
+
+
+
+#nishiura et al. (2020)
+mu = 5.75 #4.0
+sigma = 3.87 #4.6
+res_parametric_si <- suppressWarnings(suppressMessages(estimate_R(infected, 
+                                                                  method="parametric_si",
+                                                                  config = make_config(list(
+                                                                    mean_si = mu, 
+                                                                    std_si = sigma)))))
+
+
+
+RtNow = data.frame(days = infected$date[8:dim(infected)[1]], 
+                   R =  res_parametric_si$R$`Mean(R)`,
+                       sd =  res_parametric_si$R$`Std(R)`)
+#delete first four rows of RtNow
+RtNow = RtNow[-c(1:6),]
+
+#delete the last row of RtNow
+RtNow = RtNow [-dim(RtNow)[1],]
+
+
+
+RtJoint = cbind(Rt, Rt.Cori.R = RtNow$R, Rt.Cori.sd = RtNow$sd  )
+
+lower = RtJoint$Rt.Cori.R-RtJoint$Rt.Cori.sd
+upper = RtJoint$Rt.Cori.R+RtJoint$Rt.Cori.sd
+
+p = ggplot(data = RtJoint) +
+  geom_line(aes(x = date, y = 1/v, group = 1), color = "blue")+
+
+  geom_line(aes(x = date, y = Rt.Cori.R, group=1), 
+            color = "green", size=2)+
+  geom_ribbon(data = RtJoint, aes(x=date,y=Rt.Cori.R,ymin=lower, ymax=upper, group = 1),
+                                      linetype=2, alpha=0.8)+
+  
+  geom_hline(yintercept = 1,
+             linetype = "solid", 
+             color = "blue", size=0.3) +
+  theme(axis.text= element_text(size = 8)) +
+  theme(axis.title= element_text(size = 8)) +
+  xlab("") + 
+  ylab("Rt")+
+  theme (legend.position = "none",
+         axis.text.x = element_text(angle = 30, hjust = 1))+
+  scale_x_discrete(breaks = RtJoint$date[floor(seq(1, 
+                                                    length(RtJoint$date), 
+                                                    length.out = 10))]) 
+
+suppressWarnings(print(p))
+
+
+
+
+
+
+filename = paste(data.dir, "../figures/Rt.png", sep = "")
+suppressWarnings(suppressMessages(ggsave(filename)))
+
+
+
+```
+
+
+
+
+
